@@ -146,3 +146,102 @@ async def test_run_scraping_no_changes(mock_db):
     alerts = await run_scraping(scraper)
     assert alerts == []
     mock_db["save_alert"].assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Additional edge cases
+# ---------------------------------------------------------------------------
+
+def test_scraper_result_repr():
+    r = ScraperResult(product_id=1, competitor_id=2, price=42.50, in_stock=True)
+    text = repr(r)
+    assert "product_id=1" in text
+    assert "42.5" in text
+
+
+def test_scraper_result_equality():
+    a = ScraperResult(product_id=1, competitor_id=2, price=42.50, in_stock=True)
+    b = ScraperResult(product_id=1, competitor_id=2, price=42.50, in_stock=True)
+    assert a == b
+
+
+def test_scraper_result_inequality():
+    a = ScraperResult(product_id=1, competitor_id=2, price=42.50, in_stock=True)
+    b = ScraperResult(product_id=1, competitor_id=2, price=43.00, in_stock=True)
+    assert a != b
+
+
+@pytest.mark.asyncio
+async def test_demo_scraper_price_rounding(mock_db):
+    """All generated prices have at most 2 decimal places."""
+    scraper = DemoScraper()
+    results = await scraper.scrape()
+    for r in results:
+        assert r.price == round(r.price, 2)
+
+
+@pytest.mark.asyncio
+async def test_demo_scraper_empty_products(mock_db):
+    """Scraper returns empty list when no products exist."""
+    mock_db["get_products"].return_value = []
+    scraper = DemoScraper()
+    results = await scraper.scrape()
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_demo_scraper_empty_competitors(mock_db):
+    """Scraper returns empty list when no competitors exist."""
+    mock_db["get_competitors"].return_value = []
+    scraper = DemoScraper()
+    results = await scraper.scrape()
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_run_scraping_multiple_changes(mock_db):
+    """Multiple changes produce multiple alerts."""
+    mock_db["detect_price_changes"].return_value = [
+        {
+            "product_id": 1, "product_name": "Brake Pads",
+            "competitor_id": 1, "competitor_name": "AutoDoc",
+            "old_price": 44.00, "new_price": 42.50, "in_stock": True,
+        },
+        {
+            "product_id": 2, "product_name": "Oil Filter",
+            "competitor_id": 2, "competitor_name": "KFZteile24",
+            "old_price": 11.00, "new_price": 13.00, "in_stock": True,
+        },
+        {
+            "product_id": 3, "product_name": "Spark Plugs",
+            "competitor_id": 1, "competitor_name": "AutoDoc",
+            "old_price": 24.00, "new_price": 24.00, "in_stock": False,
+        },
+    ]
+    scraper = DemoScraper()
+    alerts = await run_scraping(scraper)
+    assert len(alerts) == 3
+    assert alerts[0]["alert_type"] == "price_drop"
+    assert alerts[1]["alert_type"] == "price_increase"
+    assert alerts[2]["alert_type"] == "out_of_stock"
+    assert mock_db["save_alert"].call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_run_scraping_passes_correct_params(mock_db):
+    """Verify save_price_record receives the right values from ScraperResult."""
+    mock_db["detect_price_changes"].return_value = []
+    mock_db["get_products"].return_value = [
+        {"id": 1, "name": "X", "sku": "X", "category": "X", "our_price": 10.0},
+    ]
+    mock_db["get_competitors"].return_value = [
+        {"id": 1, "name": "Y", "base_url": "", "is_active": True},
+    ]
+    scraper = DemoScraper()
+    await run_scraping(scraper)
+
+    call_args = mock_db["save_price_record"].call_args
+    assert call_args[0][0] == 1  # product_id
+    assert call_args[0][1] == 1  # competitor_id
+    assert isinstance(call_args[0][2], float)  # price
+    assert isinstance(call_args[0][3], bool)   # in_stock

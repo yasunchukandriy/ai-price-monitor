@@ -259,3 +259,96 @@ async def test_row_to_dict():
     record = make_record(id=1, name="test")
     result = db._row_to_dict(record)
     assert result == {"id": 1, "name": "test"}
+
+
+# ---------------------------------------------------------------------------
+# get_pool (pool creation path)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_pool_creates_new_pool():
+    mock_created_pool = AsyncMock()
+    with (
+        patch.object(db, "_pool", None),
+        patch(
+            "ai_price_monitor.database.asyncpg.create_pool",
+            new_callable=AsyncMock,
+            return_value=mock_created_pool,
+        ) as mock_create,
+    ):
+        pool = await db.get_pool()
+
+    assert pool is mock_created_pool
+    mock_create.assert_called_once_with(
+        dsn=db.settings.database_url, min_size=2, max_size=10
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_pool_reuses_existing():
+    existing_pool = AsyncMock()
+    with patch.object(db, "_pool", existing_pool):
+        pool = await db.get_pool()
+    assert pool is existing_pool
+
+
+# ---------------------------------------------------------------------------
+# SQL parameter verification
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_product_by_name_uses_like_pattern(mock_pool):
+    mock_pool.fetchrow.return_value = None
+    await db.get_product_by_name("brake pad")
+    call_args = mock_pool.fetchrow.call_args
+    assert call_args[0][1] == "%brake pad%"
+
+
+@pytest.mark.asyncio
+async def test_save_price_record_passes_all_params(mock_pool):
+    mock_pool.fetchrow.return_value = make_record(id=1)
+    await db.save_price_record(5, 3, 99.99, False)
+    call_args = mock_pool.fetchrow.call_args[0]
+    assert call_args[1] == 5   # product_id
+    assert call_args[2] == 3   # competitor_id
+    assert call_args[3] == 99.99  # price
+    assert call_args[4] is False  # in_stock
+
+
+@pytest.mark.asyncio
+async def test_save_alert_passes_all_params(mock_pool):
+    mock_pool.fetchrow.return_value = make_record(id=7)
+    await db.save_alert(2, 4, "out_of_stock", 15.00, None)
+    call_args = mock_pool.fetchrow.call_args[0]
+    assert call_args[1] == 2   # product_id
+    assert call_args[2] == 4   # competitor_id
+    assert call_args[3] == "out_of_stock"
+    assert call_args[4] == 15.00
+    assert call_args[5] is None
+
+
+@pytest.mark.asyncio
+async def test_save_report_passes_all_params(mock_pool):
+    mock_pool.fetchrow.return_value = make_record(id=1)
+    await db.save_report("Report text", "weekly", 5)
+    call_args = mock_pool.fetchrow.call_args[0]
+    assert call_args[1] == "weekly"
+    assert call_args[2] == "Report text"
+    assert call_args[3] == 5
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_passes_days(mock_pool):
+    mock_pool.fetch.return_value = []
+    await db.get_price_history(1, days=30)
+    call_args = mock_pool.fetch.call_args[0]
+    assert call_args[1] == 1   # product_id
+    assert call_args[2] == 30  # days
+
+
+@pytest.mark.asyncio
+async def test_get_recent_alerts_custom_limit(mock_pool):
+    mock_pool.fetch.return_value = []
+    await db.get_recent_alerts(limit=5)
+    call_args = mock_pool.fetch.call_args[0]
+    assert call_args[1] == 5

@@ -147,3 +147,120 @@ async def test_generate_daily_report_includes_changes(mock_db):
     user_msg = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "Price Changes" in user_msg
     assert "44.00" in user_msg  # old_price from SAMPLE_CHANGES
+
+
+# ---------------------------------------------------------------------------
+# Additional edge cases
+# ---------------------------------------------------------------------------
+
+def test_format_changes_zero_old_price():
+    """Zero old_price should not cause division by zero."""
+    changes = [{
+        "product_id": 1, "product_name": "Free Item",
+        "competitor_id": 1, "competitor_name": "AutoDoc",
+        "old_price": 0, "new_price": 10.00, "in_stock": True,
+    }]
+    text = _format_changes_for_prompt(changes)
+    assert "Free Item" in text
+    assert "0.0%" in text  # pct = 0 when old_price is 0
+
+
+def test_format_prices_multiple_competitors():
+    """Verify all competitors appear for a product."""
+    text = _format_prices_for_prompt(SAMPLE_PRICES, SAMPLE_PRODUCTS)
+    assert "AutoDoc" in text
+    assert "KFZteile24" in text
+
+
+def test_format_prices_sku_shown():
+    """Verify SKU is included in the prompt."""
+    text = _format_prices_for_prompt(SAMPLE_PRICES, SAMPLE_PRODUCTS)
+    assert "BP-BMW3-F" in text
+    assert "OF-MBC-01" in text
+
+
+def test_format_prices_groups_by_product():
+    """Prices are grouped under product headers."""
+    text = _format_prices_for_prompt(SAMPLE_PRICES, SAMPLE_PRODUCTS)
+    # Two product sections
+    assert "Brake Pads Front (BMW 3 Series)" in text
+    assert "Oil Filter (Mercedes C-Class)" in text
+
+
+def test_format_changes_shows_arrow():
+    """Change format includes arrow between prices."""
+    text = _format_changes_for_prompt(SAMPLE_CHANGES)
+    assert "->" in text
+
+
+@pytest.mark.asyncio
+async def test_generate_daily_report_no_changes(mock_db):
+    """Report generation works when there are no price changes."""
+    mock_db["detect_price_changes"].return_value = []
+
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="Report with no changes")]
+
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = mock_message
+
+    with patch(
+        "ai_price_monitor.analyzer.anthropic.AsyncAnthropic",
+        return_value=mock_client,
+    ):
+        report = await generate_daily_report()
+
+    assert report == "Report with no changes"
+    user_msg = mock_client.messages.create.call_args.kwargs[
+        "messages"
+    ][0]["content"]
+    assert "No price changes" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_generate_daily_report_no_prices(mock_db):
+    """Report generation works when there are no prices yet."""
+    mock_db["get_latest_prices"].return_value = []
+    mock_db["detect_price_changes"].return_value = []
+
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="Empty report")]
+
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = mock_message
+
+    with patch(
+        "ai_price_monitor.analyzer.anthropic.AsyncAnthropic",
+        return_value=mock_client,
+    ):
+        report = await generate_daily_report()
+
+    assert report == "Empty report"
+    user_msg = mock_client.messages.create.call_args.kwargs[
+        "messages"
+    ][0]["content"]
+    assert "Total price points: 0" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_generate_daily_report_uses_correct_api_key(mock_db):
+    """Anthropic client is initialized with the configured API key."""
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="Report")]
+
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = mock_message
+
+    with (
+        patch(
+            "ai_price_monitor.analyzer.anthropic.AsyncAnthropic",
+            return_value=mock_client,
+        ) as mock_cls,
+        patch(
+            "ai_price_monitor.analyzer.settings"
+        ) as mock_settings,
+    ):
+        mock_settings.anthropic_api_key = "test-key-123"
+        await generate_daily_report()
+
+    mock_cls.assert_called_once_with(api_key="test-key-123")

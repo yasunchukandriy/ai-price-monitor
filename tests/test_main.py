@@ -319,8 +319,8 @@ async def test_run_scheduler_limits_alert_lines(mock_db):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_main_starts_and_shuts_down():
-    """main() creates bot, starts scheduler, handles shutdown."""
+async def test_main_with_bot_starts_and_shuts_down():
+    """main() with bot token creates bot, starts polling, handles shutdown."""
     from ai_price_monitor.main import main
 
     mock_pool = AsyncMock()
@@ -335,16 +335,44 @@ async def test_main_starts_and_shuts_down():
     with (  # noqa: SIM117
         patch("ai_price_monitor.main.db.get_pool", return_value=mock_pool),
         patch("ai_price_monitor.main.db.close_pool", new_callable=AsyncMock),
+        patch("ai_price_monitor.main.settings") as mock_settings,
         patch(
-            "ai_price_monitor.main.create_bot",
+            "ai_price_monitor.bot.create_bot",
             return_value=(mock_bot, mock_dp),
         ),
         patch("ai_price_monitor.main.run_scheduler", new_callable=AsyncMock),
     ):
+        mock_settings.telegram_bot_token = "123:ABC"
+        mock_settings.scrape_interval_hours = 6
         with pytest.raises(asyncio.CancelledError):
             await main()
 
     mock_bot.session.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_main_without_bot_runs_scheduler_only():
+    """main() without bot token runs scheduler only."""
+    from ai_price_monitor.main import main
+
+    mock_pool = AsyncMock()
+    mock_close = AsyncMock()
+
+    # Scheduler will raise CancelledError to stop the test
+    mock_sched = AsyncMock(side_effect=asyncio.CancelledError)
+
+    with (  # noqa: SIM117
+        patch("ai_price_monitor.main.db.get_pool", return_value=mock_pool),
+        patch("ai_price_monitor.main.db.close_pool", mock_close),
+        patch("ai_price_monitor.main.settings") as mock_settings,
+        patch("ai_price_monitor.main.run_scheduler", mock_sched),
+    ):
+        mock_settings.telegram_bot_token = ""
+        mock_settings.scrape_interval_hours = 6
+        with pytest.raises(asyncio.CancelledError):
+            await main()
+
+    mock_close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -365,12 +393,15 @@ async def test_main_closes_pool_on_shutdown():
     with (  # noqa: SIM117
         patch("ai_price_monitor.main.db.get_pool", return_value=mock_pool),
         patch("ai_price_monitor.main.db.close_pool", mock_close),
+        patch("ai_price_monitor.main.settings") as mock_settings,
         patch(
-            "ai_price_monitor.main.create_bot",
+            "ai_price_monitor.bot.create_bot",
             return_value=(mock_bot, mock_dp),
         ),
         patch("ai_price_monitor.main.run_scheduler", new_callable=AsyncMock),
     ):
+        mock_settings.telegram_bot_token = "123:ABC"
+        mock_settings.scrape_interval_hours = 6
         with pytest.raises(KeyboardInterrupt):
             await main()
 

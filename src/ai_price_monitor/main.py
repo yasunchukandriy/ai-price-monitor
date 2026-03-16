@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 from ai_price_monitor import database as db
 from ai_price_monitor.analyzer import generate_daily_report
-from ai_price_monitor.bot import create_bot
 from ai_price_monitor.config import settings
 from ai_price_monitor.scraper import DemoScraper, run_scraping
 
@@ -66,18 +65,32 @@ async def main() -> None:
     # Ensure DB pool is ready
     await db.get_pool()
 
-    bot, dp = create_bot()
+    bot = None
+    dp = None
+
+    if settings.telegram_bot_token:
+        from ai_price_monitor.bot import create_bot
+
+        bot, dp = create_bot()
+        logger.info("Telegram bot configured")
+    else:
+        logger.warning("PRICE_TELEGRAM_BOT_TOKEN not set — running without Telegram bot")
 
     try:
         scheduler_task = asyncio.create_task(run_scheduler(bot))
         logger.info("Scheduler started (interval=%dh)", settings.scrape_interval_hours)
 
-        logger.info("Telegram bot starting polling...")
-        await dp.start_polling(bot)
+        if dp and bot:
+            logger.info("Telegram bot starting polling...")
+            await dp.start_polling(bot)
+        else:
+            # No bot — just keep scheduler running
+            await scheduler_task
     finally:
         scheduler_task.cancel()
         await db.close_pool()
-        await bot.session.close()
+        if bot:
+            await bot.session.close()
         logger.info("Shutdown complete.")
 
 

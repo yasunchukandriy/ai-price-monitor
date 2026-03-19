@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY pyproject.toml .
 COPY src/ src/
+COPY seed/ seed/
 
 RUN pip install --no-cache-dir . \
     && rm -rf /root/.cache

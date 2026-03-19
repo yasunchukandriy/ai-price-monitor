@@ -1,6 +1,20 @@
 # AI Price Monitor
 
-AI-powered competitor price monitoring for auto parts. Tracks competitor prices, detects changes, and generates daily AI-powered reports via Claude API. Sends alerts through a Telegram bot.
+[![CI](https://github.com/yasunchukandriy/ai-price-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/yasunchukandriy/ai-price-monitor/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Coverage: 99%](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](https://github.com/yasunchukandriy/ai-price-monitor/actions)
+
+AI-powered competitor price monitoring for auto parts. Scrapes competitor prices, stores history in PostgreSQL, detects changes, generates daily AI reports via Claude API, and sends alerts through a Telegram bot.
+
+## Features
+
+- **Price scraping** — Playwright-based headless browser scraper with CSS selector targeting and European price format parsing (`€ 1.234,56`)
+- **Change detection** — automatic comparison between scraping cycles, alerts on price drops, increases, and out-of-stock events
+- **AI daily reports** — Claude API generates actionable pricing analysis with competitive positioning and recommendations
+- **Telegram bot** — 6 commands for on-demand prices, trends, reports, and alerts
+- **Scheduler** — configurable scraping interval with automated daily report generation
+- **135 tests, 99% coverage** — fully tested with ruff lint and strict mypy
 
 ## Architecture
 
@@ -13,13 +27,14 @@ AI-powered competitor price monitoring for auto parts. Tracks competitor prices,
        ▼                                         ▼
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Analyzer   │────▶│  Claude API  │     │ Telegram Bot  │
-│  (daily)     │◀────│  (summary)   │────▶│ (aiogram)     │
+│  (daily)     │◀────│  (summary)   │────▶│ (aiogram 3.x) │
 └──────────────┘     └──────────────┘     └──────────────┘
 ```
 
 ## Tech Stack
 
 - **Python 3.12** — async throughout (asyncio, asyncpg, aiogram)
+- **Playwright** — headless Chromium scraper for competitor pages
 - **PostgreSQL 16** — price history, alerts, reports
 - **Claude API** — AI-powered daily pricing reports
 - **Telegram Bot** — real-time commands and alerts (aiogram 3.x)
@@ -95,10 +110,13 @@ mypy src/
 src/ai_price_monitor/
 ├── config.py      # pydantic-settings configuration
 ├── database.py    # asyncpg pool and CRUD operations
-├── scraper.py     # BaseScraper protocol + DemoScraper
+├── scraper.py     # PlaywrightScraper + DemoScraper with price parser
 ├── analyzer.py    # Claude API daily report generation
-├── bot.py         # Telegram bot (aiogram 3.x)
+├── bot.py         # Telegram bot with 6 commands (aiogram 3.x)
 └── main.py        # Entry point: scheduler + bot
+
+tests/               # 135 tests, 99% coverage
+seed/init.sql        # PostgreSQL schema + 10 products + 4 competitors
 ```
 
 ## License

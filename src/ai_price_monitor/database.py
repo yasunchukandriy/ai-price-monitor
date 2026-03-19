@@ -43,8 +43,10 @@ async def get_products() -> list[dict[str, Any]]:
 
 async def get_product_by_name(name: str) -> dict[str, Any] | None:
     pool = await get_pool()
+    escaped = name.replace("%", r"\%").replace("_", r"\_")
     row = await pool.fetchrow(
-        "SELECT * FROM products WHERE LOWER(name) LIKE LOWER($1)", f"%{name}%"
+        "SELECT * FROM products WHERE LOWER(name) LIKE LOWER($1) ESCAPE '\\'",
+        f"%{escaped}%",
     )
     return _row_to_dict(row) if row else None
 
@@ -81,7 +83,7 @@ async def save_price_record(
         price,
         in_stock,
     )
-    return row["id"]  # type: ignore[index]
+    return row["id"]  # type: ignore[no-any-return]
 
 
 async def get_latest_prices(product_id: int | None = None) -> list[dict[str, Any]]:
@@ -189,7 +191,7 @@ async def save_report(content: str, report_type: str = "daily", product_count: i
         content,
         product_count,
     )
-    return row["id"]  # type: ignore[index]
+    return row["id"]  # type: ignore[no-any-return]
 
 
 async def get_latest_report() -> dict[str, Any] | None:
@@ -222,7 +224,7 @@ async def save_alert(
         old_price,
         new_price,
     )
-    return row["id"]  # type: ignore[index]
+    return row["id"]  # type: ignore[no-any-return]
 
 
 async def get_recent_alerts(limit: int = 20) -> list[dict[str, Any]]:

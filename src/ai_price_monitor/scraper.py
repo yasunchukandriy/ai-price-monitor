@@ -1,4 +1,4 @@
-"""Price scraper — BaseScraper protocol and DemoScraper with realistic fake data."""
+"""Price scraper — BaseScraper protocol, PlaywrightScraper, and DemoScraper."""
 
 from __future__ import annotations
 
@@ -22,6 +22,97 @@ class ScraperResult:
 
 class BaseScraper(Protocol):
     async def scrape(self) -> list[ScraperResult]: ...
+
+
+@dataclass
+class ScrapeTarget:
+    """Defines how to scrape a competitor's product page."""
+
+    competitor_id: int
+    product_id: int
+    url: str
+    price_selector: str
+    stock_selector: str = ""
+
+
+class PlaywrightScraper:
+    """Scrape real competitor pages using Playwright (headless Chromium).
+
+    Requires the ``scraping`` extra: ``pip install ai-price-monitor[scraping]``.
+    Pass a list of :class:`ScrapeTarget` to configure which pages to visit.
+    """
+
+    def __init__(self, targets: list[ScrapeTarget] | None = None) -> None:
+        self._targets = targets or []
+
+    async def scrape(self) -> list[ScraperResult]:
+        if not self._targets:
+            return []
+
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            logger.error(
+                "playwright is not installed — run: pip install ai-price-monitor[scraping]"
+            )
+            return []
+
+        results: list[ScraperResult] = []
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            for target in self._targets:
+                try:
+                    await page.goto(target.url, timeout=15_000)
+                    await page.wait_for_selector(target.price_selector, timeout=5_000)
+
+                    price_text = await page.text_content(target.price_selector) or ""
+                    price = self._parse_price(price_text)
+
+                    in_stock = True
+                    if target.stock_selector:
+                        stock_el = await page.query_selector(target.stock_selector)
+                        if stock_el is None:
+                            in_stock = False
+
+                    if price > 0:
+                        results.append(
+                            ScraperResult(
+                                product_id=target.product_id,
+                                competitor_id=target.competitor_id,
+                                price=price,
+                                in_stock=in_stock,
+                            )
+                        )
+                    else:
+                        logger.warning("Could not parse price from %s", target.url)
+                except Exception:
+                    logger.exception("Failed to scrape %s", target.url)
+
+            await browser.close()
+
+        logger.info("PlaywrightScraper fetched %d price records", len(results))
+        return results
+
+    @staticmethod
+    def _parse_price(text: str) -> float:
+        """Extract a numeric price from text like '€ 42,50' or '42.50 EUR'."""
+        cleaned = ""
+        for ch in text:
+            if ch.isdigit() or ch in ".,":
+                cleaned += ch
+        if not cleaned:
+            return 0.0
+        # Handle European format: 1.234,56 -> 1234.56
+        if "," in cleaned and "." in cleaned:
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        elif "," in cleaned:
+            cleaned = cleaned.replace(",", ".")
+        try:
+            return round(float(cleaned), 2)
+        except ValueError:
+            return 0.0
 
 
 class DemoScraper:

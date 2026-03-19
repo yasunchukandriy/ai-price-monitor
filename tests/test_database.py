@@ -305,6 +305,15 @@ async def test_get_product_by_name_uses_like_pattern(mock_pool):
 
 
 @pytest.mark.asyncio
+async def test_get_product_by_name_escapes_wildcards(mock_pool):
+    mock_pool.fetchrow.return_value = None
+    await db.get_product_by_name("100%_match")
+    call_args = mock_pool.fetchrow.call_args
+    assert call_args[0][1] == r"%100\%\_match%"
+    assert "ESCAPE" in call_args[0][0]
+
+
+@pytest.mark.asyncio
 async def test_save_price_record_passes_all_params(mock_pool):
     mock_pool.fetchrow.return_value = make_record(id=1)
     await db.save_price_record(5, 3, 99.99, False)

@@ -89,7 +89,7 @@ async def generate_daily_report() -> str:
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     message = await client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-5-20250514",
         max_tokens=2000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],

@@ -108,7 +108,7 @@ async def test_generate_daily_report_calls_claude_with_data(mock_db):
         await generate_daily_report()
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
-    assert call_kwargs["model"] == "claude-sonnet-4-5-20250929"
+    assert call_kwargs["model"] == "claude-sonnet-4-5-20250514"
     assert call_kwargs["max_tokens"] == 2000
     assert "pricing analyst" in call_kwargs["system"].lower()
 

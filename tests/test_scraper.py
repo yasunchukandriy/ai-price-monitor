@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from ai_price_monitor.scraper import DemoScraper, ScraperResult, run_scraping
+from ai_price_monitor.scraper import (
+    DemoScraper,
+    PlaywrightScraper,
+    ScraperResult,
+    ScrapeTarget,
+    run_scraping,
+)
 
 # ---------------------------------------------------------------------------
 # ScraperResult
@@ -226,6 +234,264 @@ async def test_run_scraping_multiple_changes(mock_db):
     assert alerts[2]["alert_type"] == "out_of_stock"
     assert mock_db["save_alert"].call_count == 3
 
+
+# ---------------------------------------------------------------------------
+# PlaywrightScraper
+# ---------------------------------------------------------------------------
+
+def test_parse_price_dot():
+    assert PlaywrightScraper._parse_price("42.50 EUR") == 42.50
+
+
+def test_parse_price_comma():
+    assert PlaywrightScraper._parse_price("42,50 €") == 42.50
+
+
+def test_parse_price_european_format():
+    assert PlaywrightScraper._parse_price("1.234,56 EUR") == 1234.56
+
+
+def test_parse_price_empty():
+    assert PlaywrightScraper._parse_price("") == 0.0
+
+
+def test_parse_price_no_digits():
+    assert PlaywrightScraper._parse_price("EUR") == 0.0
+
+
+def test_parse_price_currency_symbol_prefix():
+    assert PlaywrightScraper._parse_price("€ 89,90") == 89.90
+
+
+def test_scrape_target_fields():
+    t = ScrapeTarget(
+        competitor_id=1, product_id=2, url="https://example.com", price_selector=".price"
+    )
+    assert t.competitor_id == 1
+    assert t.product_id == 2
+    assert t.stock_selector == ""
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_no_targets():
+    scraper = PlaywrightScraper(targets=[])
+    # With no targets, should return empty without launching browser
+    results = await scraper.scrape()
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_no_playwright_installed():
+    """Graceful fallback when playwright is not installed."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=1, url="https://example.com", price_selector=".price"
+    )
+    scraper = PlaywrightScraper(targets=[target])
+    with patch.dict("sys.modules", {"playwright.async_api": None}):
+        results = await scraper.scrape()
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_success():
+    """Successful scrape returns ScraperResult."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2, url="https://example.com", price_selector=".price"
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.text_content.return_value = "€ 42,50"
+    mock_page.query_selector.return_value = None
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_pw
+    mock_context_manager.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_context_manager
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert len(results) == 1
+    assert results[0].product_id == 2
+    assert results[0].competitor_id == 1
+    assert results[0].price == 42.50
+    assert results[0].in_stock is True
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_with_stock_selector():
+    """Stock selector present and element found means in_stock=True."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2,
+        url="https://example.com", price_selector=".price",
+        stock_selector=".in-stock",
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.text_content.return_value = "89.90 EUR"
+    mock_page.query_selector.return_value = MagicMock()  # element found = in stock
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_pw
+    mock_cm.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_cm
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert len(results) == 1
+    assert results[0].in_stock is True
+    assert results[0].price == 89.90
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_out_of_stock():
+    """Stock selector present but element not found means in_stock=False."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2,
+        url="https://example.com", price_selector=".price",
+        stock_selector=".in-stock",
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.text_content.return_value = "42.50"
+    mock_page.query_selector.return_value = None  # not found = out of stock
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_pw
+    mock_cm.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_cm
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert len(results) == 1
+    assert results[0].in_stock is False
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_unparseable_price():
+    """Zero price from unparseable text is skipped."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2,
+        url="https://example.com", price_selector=".price",
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.text_content.return_value = "Call for price"
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_pw
+    mock_cm.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_cm
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_page_error():
+    """Exception during page navigation is caught and skipped."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2,
+        url="https://example.com", price_selector=".price",
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.goto.side_effect = TimeoutError("Navigation timeout")
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_pw
+    mock_cm.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_cm
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_playwright_scraper_null_text_content():
+    """text_content returns None — should treat as empty string."""
+    target = ScrapeTarget(
+        competitor_id=1, product_id=2,
+        url="https://example.com", price_selector=".price",
+    )
+    scraper = PlaywrightScraper(targets=[target])
+
+    mock_page = AsyncMock()
+    mock_page.text_content.return_value = None
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page.return_value = mock_page
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_pw
+    mock_cm.__aexit__.return_value = False
+
+    mock_module = MagicMock()
+    mock_module.async_playwright.return_value = mock_cm
+
+    with patch.dict("sys.modules", {"playwright.async_api": mock_module}):
+        results = await scraper.scrape()
+
+    assert results == []
+
+
+# ---------------------------------------------------------------------------
+# run_scraping — additional
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_run_scraping_passes_correct_params(mock_db):

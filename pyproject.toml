@@ -50,5 +50,5 @@ warn_return_any = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "aiogram.*"]
+module = ["asyncpg.*", "aiogram.*", "playwright.*"]
 ignore_missing_imports = true

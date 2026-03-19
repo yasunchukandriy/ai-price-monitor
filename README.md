@@ -16,6 +16,78 @@ AI-powered competitor price monitoring for auto parts. Scrapes competitor prices
 - **Scheduler** — configurable scraping interval with automated daily report generation
 - **135 tests, 99% coverage** — fully tested with ruff lint and strict mypy
 
+## Demo
+
+<details>
+<summary><b>/prices</b> — competitor price comparison</summary>
+
+```
+Brake Pads Front (BMW 3 Series) (Our: 45.90 EUR)
+  AutoDoc:      48.37 EUR (+2.47) [OK]
+  KFZteile24:   39.44 EUR (-6.46) [OK]
+  ATP Auto:     43.57 EUR (-2.33) [OUT]
+  Mister Auto:  41.15 EUR (-4.75) [OK]
+
+Oil Filter (Mercedes C-Class) (Our: 12.80 EUR)
+  AutoDoc:      13.42 EUR (+0.62) [OK]
+  KFZteile24:   11.98 EUR (-0.82) [OK]
+  ATP Auto:     14.10 EUR (+1.30) [OK]
+  Mister Auto:  12.55 EUR (-0.25) [OK]
+```
+</details>
+
+<details>
+<summary><b>/report</b> — AI-generated daily analysis</summary>
+
+```markdown
+## Summary
+The auto parts market shows moderate price volatility across 4 competitors.
+KFZteile24 consistently undercuts on brake components (-8-14%), while
+AutoDoc maintains premium positioning (+3-7%).
+
+## Price Alerts
+- DOWN: Brake Pads Front @ KFZteile24: 42.10 → 39.44 EUR (-6.3%)
+- UP:   Oil Filter @ ATP Auto: 13.20 → 14.10 EUR (+6.8%)
+- OOS:  Brake Pads Front @ ATP Auto — out of stock
+
+## Competitive Position
+3 of 10 products priced above all competitors — review recommended.
+Average competitor price is 4.2% below our catalog.
+
+## Recommendations
+1. Consider matching KFZteile24 on Brake Pads (-14% gap)
+2. Oil Filter margin is safe — competitors within ±5%
+3. Monitor ATP Auto stock recovery for Brake Pads
+```
+</details>
+
+<details>
+<summary><b>/trends</b> — 7-day price history</summary>
+
+```
+Brake Pads Front (BMW 3 Series) — 7-day price trends
+
+  AutoDoc:      min 46.80 / avg 48.15 / max 49.90 EUR
+  KFZteile24:   min 38.20 / avg 40.10 / max 42.10 EUR
+  ATP Auto:     min 42.90 / avg 43.85 / max 45.20 EUR
+  Mister Auto:  min 40.50 / avg 41.30 / max 42.80 EUR
+```
+</details>
+
+<details>
+<summary><b>/alerts</b> — real-time price change notifications</summary>
+
+```
+Price alerts (6):
+  [DOWN] Brake Pads Front @ KFZteile24: 42.10 → 39.44 EUR
+  [UP]   Oil Filter @ ATP Auto: 13.20 → 14.10 EUR
+  [DOWN] Spark Plugs Set @ AutoDoc: 25.80 → 24.15 EUR
+  [OOS]  Brake Pads Front @ ATP Auto
+  [UP]   Timing Belt Kit @ Mister Auto: 85.40 → 89.90 EUR
+  [DOWN] Wiper Blades @ KFZteile24: 16.20 → 14.80 EUR
+```
+</details>
+
 ## Architecture
 
 ```
